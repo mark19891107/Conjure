@@ -22,6 +22,22 @@ Everything happens client-side. There is **no backend**. API keys and data
 never leave the user's browser except in the direct API calls the user
 themselves configured.
 
+## 1a. Settings and Projects
+
+The app is organised around two concepts:
+
+- **Settings** — a reusable library the user maintains once:
+  - **LLM profiles**: named OpenAI-compatible configs (base URL, key, model).
+  - **Data-source profiles**: named data sources (paste / file / HTTP / MCP),
+    with uploaded file contents persisted so they stay reusable.
+- **Projects** — each project:
+  - selects **one LLM profile** and **one or more data-source profiles**;
+  - generates a tool whose **source is version-controlled** (`ToolVersion[]`):
+    the user can switch the preview back to any version at any time;
+  - keeps a **conversation history** (`ChatEntry[]`) of every request and
+    response. When refining, the model is given either the **latest** version
+    or the **version the user is currently viewing** as the base to modify.
+
 ## 2. End-to-end flow
 
 1. **Configure the LLM** — base URL, API key, model name (OpenAI-compatible).
@@ -33,13 +49,17 @@ themselves configured.
    the data (never the whole dataset) to feed the model cheaply.
 5. **Describe the tool** — the user types a request, e.g. "bar chart of revenue
    by region" or "a sortable table with a search box".
-6. **Generate** — Conjure sends `(request + schema + sample)` to the LLM and
-   gets back a **single self-contained HTML/JS document**.
-7. **Run sandboxed** — the generated document runs in an isolated
-   `<iframe sandbox>` (see §4). The full dataset is passed in via `postMessage`
-   *after* load.
-8. **Save & iterate** — generated tools are saved to `localStorage`. The user
-   can re-open them or ask the LLM to refine the current code.
+6. **Generate** — Conjure sends `(request + per-source schema + sample)` to the
+   LLM and gets back a **prose explanation plus** a single self-contained
+   HTML/JS fragment. The explanation and code become a new `ToolVersion` and two
+   conversation entries.
+7. **Run sandboxed** — the generated fragment runs in an isolated
+   `<iframe sandbox>` (see §4). The selected sources are inlined into the
+   document.
+8. **View, switch & iterate** — the preview toggles between the rendered
+   **Result** and the **Code**; the user can switch to any earlier version, and
+   ask the LLM to refine the latest or currently-viewed version. Everything is
+   persisted to `localStorage`.
 
 ## 3. LLM integration
 
@@ -91,9 +111,10 @@ Four input methods, all normalized to in-memory JSON:
 
 ## 6. Persistence & state
 
-- `localStorage` holds: LLM config, saved data-source configs, and the library
-  of saved tools (name, the originating prompt, the generated HTML, and a
-  reference to the data source used).
+- `localStorage` holds two keys: `conjure:settings` (LLM + data-source
+  profiles) and `conjure:projects` (each project's selected profiles, its
+  `ToolVersion[]`, the current version, and the conversation history). Old
+  single-config keys are migrated into profiles on first load.
 - **Disclosure:** keys live in `localStorage` in plaintext, as is standard for
   bring-your-own-key apps. This is surfaced to the user in the UI. The sandbox
   design (§4) ensures generated tools cannot read them.

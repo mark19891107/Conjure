@@ -9,6 +9,7 @@
 
 import chartSource from '../vendor/chart.umd.js?raw'
 import papaSource from '../vendor/papaparse.min.js?raw'
+import type { NamedData } from './schema'
 
 // Escape a JSON string so it is safe to embed inside an inline <script>.
 function safeJson(data: unknown): string {
@@ -21,7 +22,11 @@ function safeJson(data: unknown): string {
 const CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; frame-src 'none'"
 
-export function buildSrcDoc(generatedFragment: string, data: unknown): string {
+export function buildSrcDoc(generatedFragment: string, sources: NamedData[]): string {
+  const map: Record<string, unknown> = {}
+  for (const s of sources) map[s.name] = s.data
+  const primary = sources[0]?.data ?? null
+
   return `<!doctype html>
 <html>
 <head>
@@ -38,7 +43,8 @@ export function buildSrcDoc(generatedFragment: string, data: unknown): string {
     parent.postMessage({ __conjure: true, type: 'error', message: String(err && err.stack ? err.stack : message) }, '*');
     return false;
   };
-  window.__CONJURE_DATA__ = JSON.parse(${safeJson(data)});
+  window.__CONJURE_SOURCES__ = JSON.parse(${safeJson(map)});
+  window.__CONJURE_DATA__ = JSON.parse(${safeJson(primary)});
 </script>
 <script>${chartSource}</script>
 <script>${papaSource}</script>

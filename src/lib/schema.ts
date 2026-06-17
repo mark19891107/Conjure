@@ -30,16 +30,28 @@ function sample(value: unknown): unknown {
   return value
 }
 
-export interface DataContext {
+/** A named, in-memory data source ready to be injected into the sandbox. */
+export interface NamedData {
+  name: string
+  data: unknown
+}
+
+export interface SourceContext {
+  name: string
   schema: string
   sample: string
   rowCount: number | null
 }
 
-export function deriveContext(data: unknown): DataContext {
+export function deriveContext(name: string, data: unknown): SourceContext {
   return {
+    name,
     schema: describe(data),
     sample: JSON.stringify(sample(data), null, 2).slice(0, 4000),
     rowCount: Array.isArray(data) ? data.length : null,
   }
+}
+
+export function deriveContexts(sources: NamedData[]): SourceContext[] {
+  return sources.map((s) => deriveContext(s.name, s.data))
 }

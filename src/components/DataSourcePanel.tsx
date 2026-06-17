@@ -4,8 +4,6 @@ import type { DataSource, DataSourceKind } from '../types'
 interface Props {
   source: DataSource
   onChange: (next: DataSource) => void
-  onFile: (text: string) => void
-  fileName: string | null
 }
 
 const KINDS: { value: DataSourceKind; label: string }[] = [
@@ -15,24 +13,25 @@ const KINDS: { value: DataSourceKind; label: string }[] = [
   { value: 'mcp', label: 'MCP tool' },
 ]
 
-export function DataSourcePanel({ source, onChange, onFile, fileName }: Props) {
+/** Editor for a single data source. File contents are persisted into config. */
+export function DataSourcePanel({ source, onChange }: Props) {
   const set = (patch: Partial<DataSource>) => onChange({ ...source, ...patch })
 
   const readFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = () => onFile(String(reader.result))
+    reader.onload = () => set({ file: { name: file.name, text: String(reader.result) } })
     reader.readAsText(file)
   }
 
   return (
-    <section className="panel">
-      <h2>Data source</h2>
+    <>
       <div className="tabs">
         {KINDS.map((k) => (
           <button
             key={k.value}
+            type="button"
             className={source.kind === k.value ? 'tab active' : 'tab'}
             onClick={() => set({ kind: k.value })}
           >
@@ -56,7 +55,9 @@ export function DataSourcePanel({ source, onChange, onFile, fileName }: Props) {
       {source.kind === 'file' && (
         <div>
           <input type="file" accept=".json,.csv,.txt" onChange={readFile} />
-          <p className="hint">{fileName ? `Loaded: ${fileName}` : 'JSON or CSV.'}</p>
+          <p className="hint">
+            {source.file.name ? `Loaded: ${source.file.name}` : 'JSON or CSV.'}
+          </p>
         </div>
       )}
 
@@ -119,13 +120,14 @@ export function DataSourcePanel({ source, onChange, onFile, fileName }: Props) {
               onChange={(e) => set({ mcp: { ...source.mcp, headers: e.target.value } })}
             />
           </label>
-          <div className="row">
+          <label>
+            Tool name
             <input
               value={source.mcp.toolName}
               placeholder="tool name"
               onChange={(e) => set({ mcp: { ...source.mcp, toolName: e.target.value } })}
             />
-          </div>
+          </label>
           <label>
             Arguments (JSON)
             <textarea
@@ -137,6 +139,6 @@ export function DataSourcePanel({ source, onChange, onFile, fileName }: Props) {
           <p className="hint">Subject to CORS — the MCP server must expose an HTTP transport.</p>
         </>
       )}
-    </section>
+    </>
   )
 }

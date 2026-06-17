@@ -8,6 +8,12 @@ Conjure is a pure client-side single-page application built with **React 18 +
 TypeScript + Vite**. It has no backend — it is bundled to static assets and
 served from **GitHub Pages** at `https://mark19891107.github.io/Conjure/`.
 
+It is a **browser-only AI tool workshop**: the user supplies their own
+OpenAI-compatible LLM key and a data source, describes a tool in natural
+language, and the LLM generates a self-contained front-end tool that runs
+sandboxed in the browser. See **`SPEC.md`** for the full product spec and the
+locked design decisions — read it before changing behavior.
+
 ## Commands
 
 ```bash
@@ -28,6 +34,24 @@ into a `test` script and update this file.
   (`src/App.tsx`) into `#root` via React's `createRoot`, wrapped in
   `<StrictMode>`. Component styles live alongside components (`App.css`); global
   styles are in `src/index.css`.
+- **State lives in `localStorage`** (no backend). `src/lib/storage.ts` +
+  `usePersisted` in `src/hooks.ts` persist the LLM config, data-source config,
+  and the saved-tools library.
+- **Core flow in `src/App.tsx`:** load data (`src/lib/dataSources.ts`, which
+  also handles MCP via `src/lib/mcp.ts`) → derive a compact schema + sample
+  (`src/lib/schema.ts`) → build the prompt (`src/lib/prompt.ts`) → call the
+  OpenAI-compatible API (`src/lib/llm.ts`) → render the generated fragment in
+  `SandboxFrame`.
+- **Sandbox (security-critical) — `src/lib/sandbox.ts` + `SandboxFrame.tsx`:**
+  generated code runs in an `<iframe sandbox="allow-scripts">` (no
+  `allow-same-origin`) with a strict CSP (`connect-src 'none'`), so it cannot
+  read the parent's `localStorage` (API keys) or make any network request.
+  Data is inlined into the iframe document; bundled libs (Chart.js, PapaParse)
+  are inlined too. **Do not weaken this isolation.**
+- **Bundled sandbox libs:** `scripts/copy-vendor.mjs` copies the UMD builds
+  from `node_modules` into `src/vendor/` (gitignored) on `postinstall` /
+  `predev` / `prebuild`; `sandbox.ts` imports them with Vite's `?raw`. To add a
+  library, add it to that script and update the system prompt in `prompt.ts`.
 - **Build:** Vite bundles everything to `dist/`. There is no SSR and no runtime
   server — the output is fully static.
 - **TypeScript project references:** `tsconfig.json` is a thin root that

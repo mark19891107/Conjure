@@ -5,12 +5,12 @@ interface Props {
   onChange: (next: LLMConfig) => void
 }
 
+/** Editor for the three OpenAI-compatible fields. Embedded by SettingsView. */
 export function LlmConfigPanel({ config, onChange }: Props) {
   const set = (patch: Partial<LLMConfig>) => onChange({ ...config, ...patch })
 
   return (
-    <section className="panel">
-      <h2>LLM (OpenAI-compatible)</h2>
+    <>
       <label>
         Base URL
         <input
@@ -40,6 +40,6 @@ export function LlmConfigPanel({ config, onChange }: Props) {
         Stored only in your browser. Works with OpenAI, OpenRouter, Ollama, LM
         Studio, etc. (endpoint must allow browser CORS).
       </p>
-    </section>
+    </>
   )
 }

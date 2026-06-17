@@ -42,16 +42,14 @@ async function loadHttp(source: DataSource): Promise<unknown> {
 }
 
 /** Load data from whichever source the user configured, normalized to JSON. */
-export async function loadData(
-  source: DataSource,
-  uploadedText: string | null,
-): Promise<unknown> {
+export async function loadData(source: DataSource): Promise<unknown> {
   switch (source.kind) {
     case 'paste':
       if (!source.paste.trim()) throw new Error('No JSON pasted yet.')
       return parseJsonOrThrow(source.paste, 'Pasted text')
     case 'file': {
-      if (uploadedText === null) throw new Error('No file uploaded yet.')
+      const uploadedText = source.file.text
+      if (!uploadedText) throw new Error('No file uploaded yet.')
       const trimmed = uploadedText.trimStart()
       if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
         return parseJsonOrThrow(uploadedText, 'Uploaded file')

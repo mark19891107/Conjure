@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { buildSrcDoc } from '../lib/sandbox'
+import type { NamedData } from '../lib/schema'
 
 interface Props {
   fragment: string
-  data: unknown
+  sources: NamedData[]
 }
 
 /** Runs an AI-generated tool inside a locked-down, no-network iframe. */
-export function SandboxFrame({ fragment, data }: Props) {
+export function SandboxFrame({ fragment, sources }: Props) {
   const [runtimeError, setRuntimeError] = useState<string | null>(null)
 
   // New tool → clear any stale error banner.
@@ -24,7 +25,7 @@ export function SandboxFrame({ fragment, data }: Props) {
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
-  const srcDoc = useMemo(() => buildSrcDoc(fragment, data), [fragment, data])
+  const srcDoc = useMemo(() => buildSrcDoc(fragment, sources), [fragment, sources])
 
   return (
     <div className="sandbox">

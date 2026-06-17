@@ -1,0 +1,53 @@
+.app {
+  max-width: 640px;
+  padding: 2rem;
+  text-align: center;
+}
+
+.title {
+  font-size: 3.2rem;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.subtitle {
+  opacity: 0.8;
+}
+
+.card {
+  padding: 2rem 0;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1rem;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+
+.footer {
+  margin-top: 2rem;
+  font-size: 0.9rem;
+  opacity: 0.6;
+}
+
+code {
+  background: rgba(127, 127, 127, 0.2);
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+}
+
+@media (prefers-color-scheme: light) {
+  button {
+    background-color: #f9f9f9;
+  }
+}

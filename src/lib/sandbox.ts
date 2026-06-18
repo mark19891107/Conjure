@@ -1,8 +1,10 @@
 // Builds the srcdoc for the sandboxed iframe that runs AI-generated code.
 //
 // Security model (see SPEC.md §4):
-// - The iframe uses sandbox="allow-scripts" WITHOUT allow-same-origin, so it
-//   has an opaque origin and cannot read the parent's localStorage (API keys).
+// - The iframe uses sandbox="allow-scripts allow-downloads" WITHOUT
+//   allow-same-origin, so it has an opaque origin and cannot read the parent's
+//   localStorage (API keys). allow-downloads only permits user-initiated file
+//   downloads (e.g. export CSV) — it does not grant network or origin access.
 // - A strict CSP forbids ALL network access (connect-src 'none', default-src
 //   'none'), so generated code cannot exfiltrate the injected data.
 // - Libraries are bundled and inlined (no CDN) so tools work fully offline.
@@ -33,7 +35,7 @@ export function buildSrcDoc(generatedFragment: string, sources: NamedData[]): st
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
 <style>
-  html,body{margin:0;padding:16px;font-family:system-ui,sans-serif;color:#1a1a1a;background:#fff;box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;font-family:system-ui,sans-serif;color:#1a1a1a;background:#fff;box-sizing:border-box;}
   *,*::before,*::after{box-sizing:inherit;}
 </style>
 </head>

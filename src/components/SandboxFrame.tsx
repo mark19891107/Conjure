@@ -37,7 +37,9 @@ export function SandboxFrame({ fragment, sources }: Props) {
       <iframe
         title="Generated tool"
         className="sandbox-frame"
-        sandbox="allow-scripts"
+        // allow-downloads lets tools offer file downloads (e.g. export CSV).
+        // It does NOT grant same-origin access, so credentials stay isolated.
+        sandbox="allow-scripts allow-downloads"
         srcDoc={srcDoc}
       />
     </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ToolVersion } from '../types'
 import type { NamedData } from '../lib/schema'
 import { SandboxFrame } from './SandboxFrame'
@@ -22,6 +22,33 @@ export function ToolPreview({ versions, currentVersionId, data, onSelectVersion,
     if (isStreaming) setMode('code')
   }, [isStreaming])
 
+  // Keep the code view pinned to the newest line while streaming, unless the
+  // user scrolled away from the bottom on purpose.
+  const codeRef = useRef<HTMLPreElement>(null)
+  const stickRef = useRef(true)
+
+  const onCodeScroll = () => {
+    const el = codeRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickRef.current = distanceFromBottom < 24
+  }
+
+  // A new stream starts fresh: follow the bottom again.
+  useEffect(() => {
+    if (isStreaming) stickRef.current = true
+  }, [isStreaming])
+
+  const displayCode = streamingCode !== null && streamingCode !== undefined
+    ? streamingCode
+    : current?.html ?? ''
+
+  useEffect(() => {
+    if (!isStreaming) return
+    const el = codeRef.current
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight
+  }, [displayCode, isStreaming])
+
   if (!current && !isStreaming) {
     return (
       <div className="empty">
@@ -29,10 +56,6 @@ export function ToolPreview({ versions, currentVersionId, data, onSelectVersion,
       </div>
     )
   }
-
-  const displayCode = streamingCode !== null && streamingCode !== undefined
-    ? streamingCode
-    : current?.html ?? ''
 
   return (
     <div className="preview">
@@ -77,6 +100,8 @@ export function ToolPreview({ versions, currentVersionId, data, onSelectVersion,
         <SandboxFrame fragment={current.html} sources={data} />
       ) : (
         <pre
+          ref={codeRef}
+          onScroll={onCodeScroll}
           className="code-view"
           dangerouslySetInnerHTML={{ __html: highlightHtml(displayCode) }}
         />

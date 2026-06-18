@@ -2,11 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Communication
+
+- **Reply to the user in Chinese (中文).** This is the user's stated preference
+  for this repository. Code, comments, identifiers, commit messages, and
+  documentation stay in English; only the chat conversation is in Chinese.
+
 ## Project overview
 
 Conjure is a pure client-side single-page application built with **React 18 +
 TypeScript + Vite**. It has no backend — it is bundled to static assets and
 served from **GitHub Pages** at `https://mark19891107.github.io/Conjure/`.
+
+It is a **browser-only AI tool workshop** organised around two concepts:
+**Settings** (a reusable library of LLM profiles and data-source profiles) and
+**Projects** (each picks one LLM + several data sources, then generates a
+version-controlled tool through a recorded conversation). The user describes a
+tool in natural language and the LLM returns an explanation plus a
+self-contained front-end fragment that runs sandboxed in the browser. See
+**`SPEC.md`** for the full product spec and the locked design decisions — read
+it before changing behavior.
 
 ## Commands
 
@@ -28,6 +43,40 @@ into a `test` script and update this file.
   (`src/App.tsx`) into `#root` via React's `createRoot`, wrapped in
   `<StrictMode>`. Component styles live alongside components (`App.css`); global
   styles are in `src/index.css`.
+- **State lives in `localStorage`** (no backend). `src/lib/storage.ts` +
+  `usePersisted` in `src/hooks.ts` persist two keys: `conjure:settings`
+  (`Settings`: `llms` + `dataSources` profiles) and `conjure:projects`
+  (`Project[]`). `buildInitialSettings()` migrates the old single-config keys
+  (`conjure:llm`, `conjure:dataSource`) into profiles on first load.
+- **Domain types — `src/types.ts`:** `LlmProfile` / `DataSourceProfile` /
+  `Settings`; and `Project`, which owns `versions` (a `ToolVersion[]` — the tool
+  source under version control), `currentVersionId` (the version shown in the
+  preview), and `chat` (a `ChatEntry[]` conversation log). Each generate/refine
+  appends a user entry and an assistant entry; assistant entries link to the
+  `ToolVersion` they produced.
+- **Top-level UI — `src/App.tsx`:** a topbar switches between the **Projects**
+  list and **Settings** (`SettingsView.tsx`, CRUD over profiles). Opening a
+  project renders `ProjectView.tsx`.
+- **Project flow — `src/components/ProjectView.tsx`:** load each selected data
+  source (`src/lib/dataSources.ts`, MCP via `src/lib/mcp.ts`) into named data →
+  derive per-source schema + sample (`deriveContexts` in `src/lib/schema.ts`) →
+  build messages (`buildMessages` in `src/lib/prompt.ts`; refine passes the base
+  version's HTML — the latest or the currently-viewed one) → call the
+  OpenAI-compatible API (`src/lib/llm.ts`) → split the reply into explanation +
+  code (`parseLlmReply`) → store a new `ToolVersion`. `ConversationPanel.tsx`
+  renders the history (request / explanation / code-snippet); `ToolPreview.tsx`
+  toggles Result⇄Code and switches versions.
+- **Sandbox (security-critical) — `src/lib/sandbox.ts` + `SandboxFrame.tsx`:**
+  generated code runs in an `<iframe sandbox="allow-scripts">` (no
+  `allow-same-origin`) with a strict CSP (`connect-src 'none'`), so it cannot
+  read the parent's `localStorage` (API keys) or make any network request. All
+  selected sources are inlined as `window.__CONJURE_SOURCES__` (keyed by name)
+  plus `window.__CONJURE_DATA__` (the primary/first source); bundled libs
+  (Chart.js, PapaParse) are inlined too. **Do not weaken this isolation.**
+- **Bundled sandbox libs:** `scripts/copy-vendor.mjs` copies the UMD builds
+  from `node_modules` into `src/vendor/` (gitignored) on `postinstall` /
+  `predev` / `prebuild`; `sandbox.ts` imports them with Vite's `?raw`. To add a
+  library, add it to that script and update the system prompt in `prompt.ts`.
 - **Build:** Vite bundles everything to `dist/`. There is no SSR and no runtime
   server — the output is fully static.
 - **TypeScript project references:** `tsconfig.json` is a thin root that

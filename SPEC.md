@@ -36,7 +36,11 @@ The app is organised around two concepts:
     the user can switch the preview back to any version at any time;
   - keeps a **conversation history** (`ChatEntry[]`) of every request and
     response. When refining, the model is given either the **latest** version
-    or the **version the user is currently viewing** as the base to modify.
+    or the **version the user is currently viewing** as the base to modify;
+  - can be **exported to / imported from a self-contained JSON file** so a
+    finished tool can be shared. The bundle carries the project plus the data
+    sources and LLM profile it uses, with the **LLM API key stripped** — the
+    recipient supplies their own key.
 
 ## 2. End-to-end flow
 
@@ -82,10 +86,12 @@ The app is organised around two concepts:
 AI-generated code is **untrusted**. Isolation is mandatory and non-negotiable:
 
 - The tool runs in an `<iframe>` built from a `srcdoc`, with
-  `sandbox="allow-scripts"` **and crucially NOT `allow-same-origin`**. The
-  iframe therefore has an opaque origin and **cannot read the parent page's
-  `localStorage`** — so it can never see the LLM API key or data-source
-  credentials.
+  `sandbox="allow-scripts allow-downloads"` **and crucially NOT
+  `allow-same-origin`**. The iframe therefore has an opaque origin and **cannot
+  read the parent page's `localStorage`** — so it can never see the LLM API key
+  or data-source credentials. `allow-downloads` only lets a tool offer a
+  user-initiated file download (e.g. *export CSV* via a `Blob` object URL); it
+  grants no network or origin access.
 - A strict **Content-Security-Policy** inside the iframe document enforces
   **no network access**: `default-src 'none'` with only inline `script`/`style`
   allowed. This is why the chosen design bundles libraries instead of loading
@@ -140,6 +146,7 @@ Four input methods, all normalized to in-memory JSON:
 
 ## 9. Out of scope (for now)
 
-- Any server-side component, hosted proxy, or shared/cloud storage.
+- Any server-side component, hosted proxy, or shared/cloud storage. (Projects
+  can still be **shared as exported JSON files** — local, with API keys
+  stripped — see §1a.)
 - Multi-user accounts or collaboration.
-- Streaming partial tool previews while the LLM is still generating.

@@ -17,7 +17,9 @@ THE CODE MUST FOLLOW THESE RULES:
   - window.__CONJURE_SOURCES__ is an object keyed by source name, e.g. window.__CONJURE_SOURCES__["Sales"].
 - You may use ONLY these preloaded globals: Chart (Chart.js v4) and Papa (PapaParse). No other libraries.
 - NO network access: no fetch, XMLHttpRequest, WebSocket, import(), or external <script>/<link>/<img> URLs. The CSP will block them. Inline everything.
+- Local file downloads ARE allowed and never touch the network: build a Blob, call URL.createObjectURL(blob), set it as the href of an <a download="..."> element, and click it. Use this for "export CSV / download" features.
 - Put logic in a single inline <script> and render results into the document body.
+- The document body has NO padding, so add your own margins/padding to your container — do not let content sit flush against the edges.
 - Be robust to small differences between the sample and the real data. Use clean inline styles. Charts need a <canvas> with an explicit height.`
 
 function dataBlock(contexts: SourceContext[]): string {

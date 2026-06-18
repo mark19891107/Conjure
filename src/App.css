@@ -187,9 +187,10 @@ button.primary:disabled {
 }
 .sandbox-frame {
   flex: 1;
+  display: block;
   width: 100%;
   border: none;
-  background: #fff;
+  background: transparent;
 }
 
 .empty {
@@ -256,6 +257,31 @@ button.primary:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.head-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.head-actions button:not(.primary) {
+  border-radius: 6px;
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  background: transparent;
+  color: inherit;
+  padding: 0.55rem 1rem;
+  font-size: 0.9rem;
+}
+.import-note {
+  border: 1px solid rgba(100, 108, 255, 0.5);
+  background: rgba(100, 108, 255, 0.08);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+}
+.list-action {
+  flex: 0 0 auto;
+  color: #646cff;
+  font-size: 0.8rem;
+  padding: 0 0.5rem;
 }
 .page-title {
   margin: 0;

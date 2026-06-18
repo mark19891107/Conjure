@@ -62,17 +62,27 @@ into a `test` script and update this file.
   derive per-source schema + sample (`deriveContexts` in `src/lib/schema.ts`) →
   build messages (`buildMessages` in `src/lib/prompt.ts`; refine passes the base
   version's HTML — the latest or the currently-viewed one) → call the
-  OpenAI-compatible API (`src/lib/llm.ts`) → split the reply into explanation +
-  code (`parseLlmReply`) → store a new `ToolVersion`. `ConversationPanel.tsx`
-  renders the history (request / explanation / code-snippet); `ToolPreview.tsx`
-  toggles Result⇄Code and switches versions.
+  OpenAI-compatible API (`src/lib/llm.ts` — `chatCompleteStream` parses SSE and
+  streams tokens; `chatComplete` is the non-streaming fallback) → split the
+  reply into explanation + code (`parseLlmReply`; `parseStreamingText` splits
+  the in-progress stream) → store a new `ToolVersion`. While streaming, the
+  partial reply shows live in `ConversationPanel.tsx` and the preview
+  auto-switches to a syntax-highlighted Code view (`src/lib/highlight.ts`).
+  `ToolPreview.tsx` toggles Result⇄Code and switches versions.
+- **Project sharing — `src/lib/projectShare.ts`:** export a project to a
+  self-contained JSON bundle (project + referenced data-source profiles + LLM
+  profile **with the API key stripped**) and import it back, remapping ids to
+  avoid collisions. Wired into the Projects list in `App.tsx`.
 - **Sandbox (security-critical) — `src/lib/sandbox.ts` + `SandboxFrame.tsx`:**
-  generated code runs in an `<iframe sandbox="allow-scripts">` (no
-  `allow-same-origin`) with a strict CSP (`connect-src 'none'`), so it cannot
-  read the parent's `localStorage` (API keys) or make any network request. All
+  generated code runs in an `<iframe sandbox="allow-scripts allow-downloads">`
+  (no `allow-same-origin`) with a strict CSP (`connect-src 'none'`), so it
+  cannot read the parent's `localStorage` (API keys) or make any network
+  request. `allow-downloads` only permits user-initiated file downloads (e.g.
+  export CSV via a Blob object URL) — it grants no network or origin access. All
   selected sources are inlined as `window.__CONJURE_SOURCES__` (keyed by name)
   plus `window.__CONJURE_DATA__` (the primary/first source); bundled libs
-  (Chart.js, PapaParse) are inlined too. **Do not weaken this isolation.**
+  (Chart.js, PapaParse) are inlined too. **Do not weaken this isolation**
+  (never add `allow-same-origin` or relax `connect-src`).
 - **Bundled sandbox libs:** `scripts/copy-vendor.mjs` copies the UMD builds
   from `node_modules` into `src/vendor/` (gitignored) on `postinstall` /
   `predev` / `prebuild`; `sandbox.ts` imports them with Vite's `?raw`. To add a

@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import type { ChatEntry, DataSourceProfile, Project, Settings, ToolVersion } from '../types'
 import { loadData } from '../lib/dataSources'
 import { deriveContexts, type NamedData } from '../lib/schema'
-import { chatComplete } from '../lib/llm'
-import { buildMessages, parseLlmReply } from '../lib/prompt'
+import { chatCompleteStream } from '../lib/llm'
+import { buildMessages, parseLlmReply, parseStreamingText } from '../lib/prompt'
 import { ConversationPanel } from './ConversationPanel'
 import { ToolPreview } from './ToolPreview'
 
@@ -23,6 +23,7 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
   const [data, setData] = useState<NamedData[]>([])
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  const [streamingText, setStreamingText] = useState<string | null>(null)
 
   const patch = (p: Partial<Project>) => onChange({ ...project, ...p, updatedAt: Date.now() })
 
@@ -66,8 +67,6 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
       return
     }
     const base = refine ? baseVersion() : null
-    setBusy(true)
-    setStatus('Loading data…')
     const now = Date.now()
     const userEntry: ChatEntry = {
       id: uid(),
@@ -76,11 +75,26 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
       basedOnLabel: base?.label ?? null,
       createdAt: now,
     }
+
+    // Show the user's message immediately, before the LLM responds.
+    const chatAfterUser = [...project.chat, userEntry]
+    patch({ chat: chatAfterUser })
+
+    setBusy(true)
+    setStatus('Loading data…')
+    setStreamingText(null)
+
     try {
       const named = await loadAll()
       setStatus('Generating…')
       const messages = buildMessages(text, deriveContexts(named), base?.html)
-      const reply = await chatComplete(llm, messages)
+
+      setStreamingText('')
+      const reply = await chatCompleteStream(llm, messages, (accumulated) => {
+        setStreamingText(accumulated)
+      })
+      setStreamingText(null)
+
       const { explanation, code } = parseLlmReply(reply)
       const version: ToolVersion = {
         id: uid(),
@@ -100,11 +114,12 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
       patch({
         versions: [...project.versions, version],
         currentVersionId: version.id,
-        chat: [...project.chat, userEntry, assistantEntry],
+        chat: [...chatAfterUser, assistantEntry],
       })
       setRequest('')
       setStatus(null)
     } catch (e) {
+      setStreamingText(null)
       const message = (e as Error).message
       const assistantEntry: ChatEntry = {
         id: uid(),
@@ -112,7 +127,7 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
         error: message,
         createdAt: Date.now(),
       }
-      patch({ chat: [...project.chat, userEntry, assistantEntry] })
+      patch({ chat: [...chatAfterUser, assistantEntry] })
       setStatus(`Error: ${message}`)
     } finally {
       setBusy(false)
@@ -127,6 +142,10 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
         : [...project.dataSourceIds, id],
     })
   }
+
+  // Derive streaming code to pass to ToolPreview for live code display
+  const streamingParse = streamingText !== null ? parseStreamingText(streamingText) : null
+  const streamingCode = streamingParse?.codeStarted ? streamingParse.partialCode : null
 
   const noConfig = settings.llms.length === 0 && settings.dataSources.length === 0
   const current = project.versions.find((v) => v.id === project.currentVersionId)
@@ -178,7 +197,11 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
         </div>
         {noConfig && (
           <p className="hint">
-            No models or sources yet. <button className="link" onClick={onGoSettings}>Open Settings</button> to add them.
+            No models or sources yet.{' '}
+            <button className="link" onClick={onGoSettings}>
+              Open Settings
+            </button>{' '}
+            to add them.
           </p>
         )}
       </div>
@@ -190,6 +213,7 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
             versions={project.versions}
             currentVersionId={project.currentVersionId}
             onSelectVersion={(id) => patch({ currentVersionId: id })}
+            streamingText={streamingText}
           />
           <div className="composer">
             {showRefineBase && (
@@ -243,6 +267,7 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
             currentVersionId={project.currentVersionId}
             data={data}
             onSelectVersion={(id) => patch({ currentVersionId: id })}
+            streamingCode={streamingCode}
           />
         </section>
       </div>

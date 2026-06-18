@@ -460,14 +460,31 @@ button.primary:disabled {
 .code-block,
 .code-view {
   margin: 0;
-  padding: 0.6rem;
-  font-family: ui-monospace, monospace;
+  padding: 0.75rem;
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.74rem;
   white-space: pre-wrap;
   word-break: break-word;
-  background: rgba(127, 127, 127, 0.1);
+  background: #1e1e1e;
+  color: #d4d4d4;
   overflow: auto;
+  line-height: 1.5;
 }
+
+/* ---- syntax highlight token colours (VS Code Dark+ palette) ---- */
+.hl-comment    { color: #6a9955; }
+.hl-tag-name   { color: #4ec9b0; }
+.hl-punct      { color: #808080; }
+.hl-attr-name  { color: #9cdcfe; }
+.hl-attr-value { color: #ce9178; }
+.hl-keyword    { color: #c586c0; }
+.hl-string     { color: #ce9178; }
+.hl-number     { color: #b5cea8; }
+.hl-selector   { color: #d7ba7d; }
+.hl-css-prop   { color: #9cdcfe; }
+.hl-css-val    { color: #ce9178; }
+.streaming-badge { background: #4a3f7a; color: #c586c0; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 .composer {
   border-top: 1px solid rgba(127, 127, 127, 0.25);
@@ -510,4 +527,12 @@ button.primary:disabled {
 }
 .code-view {
   flex: 1;
+  font-size: 0.8rem;
+  white-space: pre;
+  word-break: normal;
+}
+.streaming-hint {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  font-style: italic;
 }

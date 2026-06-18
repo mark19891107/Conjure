@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChatEntry, ToolVersion } from '../types'
+import { parseStreamingText } from '../lib/prompt'
+import { highlightHtml } from '../lib/highlight'
 
 interface Props {
   chat: ChatEntry[]
   versions: ToolVersion[]
   currentVersionId: string | null
   onSelectVersion: (versionId: string) => void
+  streamingText?: string | null
 }
 
-/** A collapsible code snippet shown inside an assistant turn. */
 function CodeCard({
   version,
   isCurrent,
@@ -30,7 +32,12 @@ function CodeCard({
           {isCurrent ? 'Viewing' : 'View this version'}
         </button>
       </div>
-      {open && <pre className="code-block">{version.html}</pre>}
+      {open && (
+        <pre
+          className="code-block"
+          dangerouslySetInnerHTML={{ __html: highlightHtml(version.html) }}
+        />
+      )}
     </div>
   )
 }
@@ -40,8 +47,16 @@ export function ConversationPanel({
   versions,
   currentVersionId,
   onSelectVersion,
+  streamingText,
 }: Props) {
-  if (chat.length === 0) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [chat.length, streamingText])
+
+  if (chat.length === 0 && streamingText == null) {
     return (
       <p className="empty-conversation">
         No history yet. Describe the tool you want below to start.
@@ -50,7 +65,7 @@ export function ConversationPanel({
   }
 
   return (
-    <div className="conversation">
+    <div className="conversation" ref={scrollRef}>
       {chat.map((entry) => {
         if (entry.role === 'user') {
           return (
@@ -83,6 +98,22 @@ export function ConversationPanel({
           </div>
         )
       })}
+
+      {streamingText != null && (() => {
+        const { explanation, codeStarted } = parseStreamingText(streamingText)
+        return (
+          <div className="msg assistant streaming">
+            {explanation && <div className="bubble">{explanation}</div>}
+            {codeStarted && (
+              <div className="code-card">
+                <div className="code-card-head">
+                  <span className="version-badge streaming-badge">generating…</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -86,3 +86,28 @@ export function parseLlmReply(text: string): ParsedReply {
     .trim()
   return { explanation, code }
 }
+
+export interface StreamingParse {
+  explanation: string
+  /** The code content after the opening fence; null while fence not yet seen. */
+  partialCode: string | null
+  codeStarted: boolean
+}
+
+/**
+ * Parse an in-progress (possibly incomplete) model reply to extract the
+ * explanation and partial code as they stream in.
+ */
+export function parseStreamingText(text: string): StreamingParse {
+  const m = text.match(/```(?:html|HTML)?\s*\n/)
+  if (!m || m.index === undefined) {
+    return { explanation: text, partialCode: null, codeStarted: false }
+  }
+  const codeBodyStart = m.index + m[0].length
+  const explanation = text.slice(0, m.index).trim()
+  const afterFence = text.slice(codeBodyStart)
+  // The closing fence may not have arrived yet
+  const closingIdx = afterFence.indexOf('\n```')
+  const partialCode = closingIdx >= 0 ? afterFence.slice(0, closingIdx) : afterFence
+  return { explanation, partialCode, codeStarted: true }
+}

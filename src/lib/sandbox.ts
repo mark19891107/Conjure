@@ -35,7 +35,8 @@ export function buildSrcDoc(generatedFragment: string, sources: NamedData[]): st
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${CSP}">
 <style>
-  html,body{margin:0;padding:0;height:100%;font-family:system-ui,sans-serif;color:#1a1a1a;background:#fff;box-sizing:border-box;}
+  html{height:100%;background:#fff;}
+  body{margin:0;padding:0;min-height:100%;font-family:system-ui,sans-serif;color:#1a1a1a;background:#fff;box-sizing:border-box;}
   *,*::before,*::after{box-sizing:inherit;}
 </style>
 </head>

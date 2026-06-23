@@ -1,9 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChatEntry, DataSourceProfile, Project, Settings, ToolVersion } from '../types'
 import { loadData } from '../lib/dataSources'
 import { deriveContexts, type NamedData } from '../lib/schema'
-import { chatCompleteStream } from '../lib/llm'
-import { buildMessages, parseLlmReply, parseStreamingText } from '../lib/prompt'
+import { chatComplete, chatCompleteStream } from '../lib/llm'
+import {
+  buildAutoFixMessages,
+  buildExploreMessages,
+  buildMessages,
+  buildSuggestionMessages,
+  parseLlmReply,
+  parseExploreJs,
+  parseSuggestions,
+  parseStreamingText,
+} from '../lib/prompt'
+import { runExploreInSandbox } from '../lib/sandbox'
 import { ConversationPanel } from './ConversationPanel'
 import { ToolPreview } from './ToolPreview'
 
@@ -24,6 +34,18 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [streamingText, setStreamingText] = useState<string | null>(null)
+
+  // Agent-step UI state
+  const [explorePhase, setExplorePhase] = useState<'exploring' | 'explored' | null>(null)
+  const [autoFixAttempt, setAutoFixAttempt] = useState<number | null>(null)
+  const [suggestions, setSuggestions] = useState<string[]>([])
+
+  // Tracks how many auto-fix attempts remain for the currently-visible version.
+  // Reset to 0 whenever a user-requested generation produces a new version.
+  const autoFixCountRef = useRef(0)
+
+  // Always-fresh callback pointer for the sandbox error listener.
+  const handleSandboxErrorRef = useRef<(msg: string) => void>(() => {})
 
   const patch = (p: Partial<Project>) => onChange({ ...project, ...p, updatedAt: Date.now() })
 
@@ -46,6 +68,81 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id])
 
+  // Listen for runtime errors from any sandbox iframe. Using a ref keeps the
+  // listener stable (added once) while always calling the freshest handler.
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      const d = e.data as Record<string, unknown>
+      if (d?.__conjure === true && d.type === 'error') {
+        handleSandboxErrorRef.current(String(d.message ?? ''))
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
+  // Update the ref every render so it always captures fresh state/closures.
+  handleSandboxErrorRef.current = (msg: string) => {
+    if (busy) return
+    if (autoFixCountRef.current >= 3) return
+    const current = project.versions.find((v) => v.id === project.currentVersionId)
+    if (!current) return
+    autoFixCountRef.current += 1
+    void doAutoFix(msg, current)
+  }
+
+  async function doAutoFix(error: string, version: ToolVersion) {
+    const llm = settings.llms.find((l) => l.id === project.llmId)
+    if (!llm) return
+
+    const attempt = autoFixCountRef.current
+    // Capture project state before any async operations
+    const chatSnapshot = project.chat
+    const versionsSnapshot = project.versions
+
+    setBusy(true)
+    setAutoFixAttempt(attempt)
+    setStreamingText('')
+    setStatus(`Auto-fixing error (${attempt}/3)…`)
+
+    try {
+      const messages = buildAutoFixMessages(error, version.html)
+      const reply = await chatCompleteStream(llm, messages, (acc) => setStreamingText(acc))
+      setStreamingText(null)
+
+      const { explanation, code } = parseLlmReply(reply)
+      const newVersion: ToolVersion = {
+        id: uid(),
+        label: versionsSnapshot.length + 1,
+        html: code,
+        explanation,
+        basedOn: version.id,
+        createdAt: Date.now(),
+      }
+      const chatEntry: ChatEntry = {
+        id: uid(),
+        role: 'assistant',
+        explanation: `Auto-fixed runtime error: ${explanation}`,
+        versionId: newVersion.id,
+        createdAt: Date.now(),
+      }
+      onChange({
+        ...project,
+        versions: [...versionsSnapshot, newVersion],
+        currentVersionId: newVersion.id,
+        chat: [...chatSnapshot, chatEntry],
+        updatedAt: Date.now(),
+      })
+      setStatus(null)
+    } catch (e) {
+      setStreamingText(null)
+      setStatus(`Auto-fix failed: ${(e as Error).message}`)
+    } finally {
+      setBusy(false)
+      setAutoFixAttempt(null)
+    }
+  }
+
   const latest = (): ToolVersion | null =>
     project.versions.length ? project.versions[project.versions.length - 1] : null
 
@@ -55,8 +152,8 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
     return project.versions.find((v) => v.id === project.currentVersionId) ?? latest()
   }
 
-  async function run(refine: boolean) {
-    const text = request.trim()
+  async function run(refine: boolean, overrideText?: string) {
+    const text = (overrideText ?? request).trim()
     if (!text) {
       setStatus('Describe the tool you want.')
       return
@@ -76,24 +173,45 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
       createdAt: now,
     }
 
-    // Show the user's message immediately, before the LLM responds.
     const chatAfterUser = [...project.chat, userEntry]
     patch({ chat: chatAfterUser })
 
     setBusy(true)
+    setSuggestions([])
     setStatus('Loading data…')
     setStreamingText(null)
+    setExplorePhase(null)
+    autoFixCountRef.current = 0
 
     try {
       const named = await loadAll()
+      const contexts = deriveContexts(named)
+
+      // Exploration agent — only for fresh generation with data attached
+      let insights: unknown = null
+      if (!refine && named.length > 0) {
+        setExplorePhase('exploring')
+        setStatus('Analysing data…')
+        try {
+          const exploreReply = await chatComplete(llm, buildExploreMessages(contexts))
+          const snippetJs = parseExploreJs(exploreReply)
+          insights = await runExploreInSandbox(snippetJs, named)
+          setExplorePhase('explored')
+        } catch {
+          // Exploration failure is non-fatal — fall back to generation without insights
+          setExplorePhase(null)
+        }
+      }
+
       setStatus('Generating…')
-      const messages = buildMessages(text, deriveContexts(named), base?.html)
+      const messages = buildMessages(text, contexts, base?.html, insights ?? undefined)
 
       setStreamingText('')
       const reply = await chatCompleteStream(llm, messages, (accumulated) => {
         setStreamingText(accumulated)
       })
       setStreamingText(null)
+      setExplorePhase(null)
 
       const { explanation, code } = parseLlmReply(reply)
       const version: ToolVersion = {
@@ -118,8 +236,14 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
       })
       setRequest('')
       setStatus(null)
+
+      // Fire-and-forget suggestion generation
+      chatComplete(llm, buildSuggestionMessages(contexts, code))
+        .then((r) => setSuggestions(parseSuggestions(r)))
+        .catch(() => {})
     } catch (e) {
       setStreamingText(null)
+      setExplorePhase(null)
       const message = (e as Error).message
       const assistantEntry: ChatEntry = {
         id: uid(),
@@ -143,7 +267,6 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
     })
   }
 
-  // Derive streaming code to pass to ToolPreview for live code display
   const streamingParse = streamingText !== null ? parseStreamingText(streamingText) : null
   const streamingCode = streamingParse?.codeStarted ? streamingParse.partialCode : null
 
@@ -214,6 +337,13 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
             currentVersionId={project.currentVersionId}
             onSelectVersion={(id) => patch({ currentVersionId: id })}
             streamingText={streamingText}
+            explorePhase={explorePhase}
+            autoFixAttempt={autoFixAttempt}
+            suggestions={suggestions}
+            onSuggestion={(text) => {
+              setSuggestions([])
+              void run(false, text)
+            }}
           />
           <div className="composer">
             {showRefineBase && (
@@ -244,7 +374,10 @@ export function ProjectView({ project, settings, onChange, onBack, onGoSettings 
               rows={3}
               value={request}
               placeholder="e.g. Bar chart of revenue by region, sorted descending"
-              onChange={(e) => setRequest(e.target.value)}
+              onChange={(e) => {
+                setRequest(e.target.value)
+                if (suggestions.length > 0) setSuggestions([])
+              }}
             />
             <div className="actions">
               <button className="primary" disabled={busy} onClick={() => run(false)}>

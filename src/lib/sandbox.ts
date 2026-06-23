@@ -24,11 +24,15 @@ function safeJson(data: unknown): string {
 const CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; frame-src 'none'"
 
-export function buildSrcDoc(generatedFragment: string, sources: NamedData[]): string {
+function dataGlobals(sources: NamedData[]): string {
   const map: Record<string, unknown> = {}
   for (const s of sources) map[s.name] = s.data
   const primary = sources[0]?.data ?? null
+  return `window.__CONJURE_SOURCES__ = JSON.parse(${safeJson(map)});
+  window.__CONJURE_DATA__ = JSON.parse(${safeJson(primary)});`
+}
 
+export function buildSrcDoc(generatedFragment: string, sources: NamedData[]): string {
   return `<!doctype html>
 <html>
 <head>
@@ -46,12 +50,84 @@ export function buildSrcDoc(generatedFragment: string, sources: NamedData[]): st
     parent.postMessage({ __conjure: true, type: 'error', message: String(err && err.stack ? err.stack : message) }, '*');
     return false;
   };
-  window.__CONJURE_SOURCES__ = JSON.parse(${safeJson(map)});
-  window.__CONJURE_DATA__ = JSON.parse(${safeJson(primary)});
+  ${dataGlobals(sources)}
 </script>
 <script>${chartSource}</script>
 <script>${papaSource}</script>
 ${generatedFragment}
 </body>
 </html>`
+}
+
+// Builds a minimal sandbox document that runs a JS snippet and postMessages back
+// the result. Used by the data-exploration agent step.
+function buildExploreSrcDoc(snippetJs: string, sources: NamedData[]): string {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${CSP}">
+</head>
+<body>
+<script>
+  ${dataGlobals(sources)}
+</script>
+<script>${chartSource}</script>
+<script>${papaSource}</script>
+<script>
+(function () {
+  try {
+    ${snippetJs}
+  } catch (e) {
+    parent.postMessage({ __conjure: true, type: 'explore-result', insights: { _error: String(e) } }, '*');
+  }
+})();
+</script>
+</body>
+</html>`
+}
+
+/**
+ * Run an LLM-generated JS snippet in a hidden sandbox and return whatever the
+ * snippet passes to parent.postMessage as `insights`. Rejects on timeout.
+ */
+export function runExploreInSandbox(snippetJs: string, sources: NamedData[], timeoutMs = 12000): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement('iframe')
+    iframe.setAttribute(
+      'style',
+      'position:fixed;width:0;height:0;opacity:0;pointer-events:none;border:none;',
+    )
+    iframe.setAttribute('sandbox', 'allow-scripts')
+
+    let settled = false
+
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(new Error('Data exploration timed out'))
+    }, timeoutMs)
+
+    function onMessage(e: MessageEvent) {
+      const d = e.data as Record<string, unknown>
+      if (d?.__conjure === true && d.type === 'explore-result') {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(d.insights ?? null)
+      }
+    }
+
+    function cleanup() {
+      clearTimeout(timer)
+      window.removeEventListener('message', onMessage)
+      if (iframe.parentNode) iframe.remove()
+    }
+
+    window.addEventListener('message', onMessage)
+    document.body.appendChild(iframe)
+    // Set srcdoc after appending so the load fires correctly in all browsers.
+    iframe.srcdoc = buildExploreSrcDoc(snippetJs, sources)
+  })
 }

@@ -22,6 +22,39 @@ THE CODE MUST FOLLOW THESE RULES:
 - The document body has NO padding, so add your own margins/padding to your container — do not let content sit flush against the edges.
 - Be robust to small differences between the sample and the real data. Use clean inline styles. Charts need a <canvas> with an explicit height.`
 
+// Prompt for the data-exploration agent step.
+const EXPLORE_SYSTEM = `You are a data analysis assistant. Write a JavaScript snippet that explores the provided dataset and reports key insights.
+
+The snippet runs in a sandboxed iframe with these globals pre-loaded:
+- window.__CONJURE_DATA__ — the primary data source, already parsed as JSON
+- window.__CONJURE_SOURCES__ — object keyed by source name
+
+Your snippet MUST end by calling exactly:
+  parent.postMessage({ __conjure: true, type: 'explore-result', insights: YOUR_OBJECT }, '*');
+
+YOUR_OBJECT must be a plain, JSON-serializable object. Analyze and include:
+- Total row/item count
+- Column/key names and their inferred types (number, string, boolean, date, array, object)
+- For numeric columns: min, max, mean, and whether nulls are present
+- For string columns: number of unique values and the top 5 most common values
+- Any notable patterns (e.g. date range, looks like currency, ID-like column)
+
+Respond with ONLY a \`\`\`javascript code block. No other text.`
+
+// Prompt for generating follow-up suggestion chips.
+const SUGGEST_SYSTEM = `You suggest brief follow-up refinements for a generated data tool.
+Return ONLY a valid JSON array of exactly 3 strings. Each string must be 4-8 words describing a useful next step.
+No other text — just the JSON array.`
+
+// Prompt for the auto-fix agent step.
+const AUTO_FIX_SYSTEM = `You are fixing a runtime JavaScript error in a sandboxed HTML/JS data tool. Identify and fix the root cause.
+
+RESPOND IN TWO PARTS:
+1. One sentence explaining what you fixed.
+2. The corrected code in EXACTLY ONE \`\`\`html fenced block.
+
+Same rules as before: no <html>/<head>/<body> tags, no network access, data is in window.__CONJURE_DATA__ and window.__CONJURE_SOURCES__.`
+
 function dataBlock(contexts: SourceContext[]): string {
   if (contexts.length === 0) return 'No data sources are attached.'
   return contexts
@@ -38,11 +71,14 @@ function dataBlock(contexts: SourceContext[]): string {
 /**
  * Build the chat messages. When `baseHtml` is provided the model refines that
  * code (the latest or the currently-viewed version, chosen by the caller).
+ * When `insights` is provided (from the exploration agent), it's added as
+ * extra context for fresh generation.
  */
 export function buildMessages(
   request: string,
   contexts: SourceContext[],
   baseHtml?: string,
+  insights?: unknown,
 ): ChatMessage[] {
   const data = dataBlock(contexts)
   const messages: ChatMessage[] = [{ role: 'system', content: SYSTEM_PROMPT }]
@@ -57,13 +93,63 @@ export function buildMessages(
       content: `${data}\n\nModify the tool above as follows: ${request}\n\nReturn the explanation and the full updated fragment.`,
     })
   } else {
+    const insightsPart =
+      insights != null ? `\nData analysis results:\n${JSON.stringify(insights, null, 2)}\n` : ''
     messages.push({
       role: 'user',
-      content: `${data}\n\nBuild this tool: ${request}`,
+      content: `${data}${insightsPart}\n\nBuild this tool: ${request}`,
     })
   }
 
   return messages
+}
+
+export function buildExploreMessages(contexts: SourceContext[]): ChatMessage[] {
+  return [
+    { role: 'system', content: EXPLORE_SYSTEM },
+    { role: 'user', content: dataBlock(contexts) },
+  ]
+}
+
+export function parseExploreJs(reply: string): string {
+  const m = reply.match(/```(?:javascript|js)?\s*\n([\s\S]*?)```/)
+  if (m) return m[1].trim()
+  return reply.trim()
+}
+
+export function buildSuggestionMessages(contexts: SourceContext[], toolHtml: string): ChatMessage[] {
+  return [
+    { role: 'system', content: SUGGEST_SYSTEM },
+    {
+      role: 'user',
+      content: `${dataBlock(contexts)}\n\nGenerated tool HTML (truncated):\n\`\`\`html\n${toolHtml.slice(0, 2000)}\n\`\`\`\n\nSuggest 3 follow-up refinements as a JSON array.`,
+    },
+  ]
+}
+
+export function parseSuggestions(reply: string): string[] {
+  try {
+    const m = reply.match(/\[[\s\S]*?\]/)
+    if (m) {
+      const arr = JSON.parse(m[0]) as unknown[]
+      if (Array.isArray(arr)) {
+        return arr.filter((s): s is string => typeof s === 'string').slice(0, 3)
+      }
+    }
+  } catch {
+    // ignore malformed reply
+  }
+  return []
+}
+
+export function buildAutoFixMessages(error: string, currentHtml: string): ChatMessage[] {
+  return [
+    { role: 'system', content: AUTO_FIX_SYSTEM },
+    {
+      role: 'user',
+      content: `Runtime error:\n${error}\n\nCurrent tool code:\n\`\`\`html\n${currentHtml}\n\`\`\`\n\nFix the error.`,
+    },
+  ]
 }
 
 export interface ParsedReply {

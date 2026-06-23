@@ -9,6 +9,10 @@ interface Props {
   currentVersionId: string | null
   onSelectVersion: (versionId: string) => void
   streamingText?: string | null
+  explorePhase?: 'exploring' | 'explored' | null
+  autoFixAttempt?: number | null
+  suggestions?: string[]
+  onSuggestion?: (text: string) => void
 }
 
 function CodeCard({
@@ -48,15 +52,19 @@ export function ConversationPanel({
   currentVersionId,
   onSelectVersion,
   streamingText,
+  explorePhase,
+  autoFixAttempt,
+  suggestions = [],
+  onSuggestion,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [chat.length, streamingText])
+  }, [chat.length, streamingText, explorePhase, autoFixAttempt])
 
-  if (chat.length === 0 && streamingText == null) {
+  if (chat.length === 0 && streamingText == null && !explorePhase && !autoFixAttempt) {
     return (
       <p className="empty-conversation">
         No history yet. Describe the tool you want below to start.
@@ -99,21 +107,59 @@ export function ConversationPanel({
         )
       })}
 
-      {streamingText != null && (() => {
-        const { explanation, codeStarted } = parseStreamingText(streamingText)
-        return (
-          <div className="msg assistant streaming">
-            {explanation && <div className="bubble">{explanation}</div>}
-            {codeStarted && (
-              <div className="code-card">
-                <div className="code-card-head">
-                  <span className="version-badge streaming-badge">generating…</span>
-                </div>
-              </div>
-            )}
+      {/* Suggestion chips shown after the last assistant message */}
+      {suggestions.length > 0 && !streamingText && !explorePhase && autoFixAttempt == null && (
+        <div className="suggestion-row">
+          <span className="suggestion-label">Try next:</span>
+          <div className="suggestion-chips">
+            {suggestions.map((s, i) => (
+              <button key={i} className="suggestion-chip" onClick={() => onSuggestion?.(s)}>
+                {s}
+              </button>
+            ))}
           </div>
-        )
-      })()}
+        </div>
+      )}
+
+      {/* Exploration status — appears while the agent is analysing data */}
+      {explorePhase && (
+        <div className="msg assistant">
+          <div className={`bubble explore-bubble${explorePhase === 'exploring' ? ' pulsing' : ''}`}>
+            {explorePhase === 'exploring' ? '🔍 Analysing data…' : '✓ Data analysis complete'}
+          </div>
+        </div>
+      )}
+
+      {/* Auto-fix status — shown while auto-fixing a runtime error */}
+      {autoFixAttempt != null && (
+        <div className="msg assistant">
+          <div className="code-card">
+            <div className="code-card-head">
+              <span className="version-badge streaming-badge autofix-badge">
+                🔧 Auto-fixing ({autoFixAttempt}/3)…
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Streaming LLM response */}
+      {streamingText != null &&
+        (() => {
+          const { explanation, codeStarted } = parseStreamingText(streamingText)
+          return (
+            <div className="msg assistant streaming">
+              {explanation && <div className="bubble">{explanation}</div>}
+              {codeStarted && (
+                <div className="code-card">
+                  <div className="code-card-head">
+                    <span className="version-badge streaming-badge">generating…</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
     </div>
   )
 }
